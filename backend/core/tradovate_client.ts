@@ -137,6 +137,23 @@ export class TradovateClient implements BrokerClient {
     }
   }
 
+  async closePosition(orderId: string): Promise<boolean> {
+    const positions = await this.getPositions();
+    const pos = positions.find(p => p.orderId === orderId || p.symbol === orderId);
+    if (pos) {
+      await this.requestAsync("order/placeOrder", {
+        accountSpec: settings.TRADOVATE.USERNAME,
+        symbol: pos.symbol,
+        action: pos.side === "long" ? "Sell" : "Buy",
+        orderQty: pos.quantity,
+        orderType: "Market",
+        isAutomated: true
+      });
+      return true;
+    }
+    return false;
+  }
+
   async flattenAll(): Promise<boolean> {
     const positions = await this.getPositions();
     for (const pos of positions) {
@@ -184,11 +201,15 @@ export class TradovateClient implements BrokerClient {
     try {
       const response = await this.requestAsync("position/list", {});
       return (response || []).map((p: any) => ({
+        orderId: p.id?.toString() || p.symbol, // Use position ID or symbol as fallback
         symbol: p.symbol,
         side: p.netQty > 0 ? "long" : "short",
         quantity: Math.abs(p.netQty),
         entryPrice: p.avgPrice,
-        pnl: p.realizedPnL + p.unrealizedPnL
+        currentPrice: p.avgPrice, // Placeholder
+        unrealizedPnL: p.unrealizedPnL || 0,
+        stopLoss: 0,
+        takeProfit: 0
       }));
     } catch (e) {
       console.error("Failed to fetch positions:", e);

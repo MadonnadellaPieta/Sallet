@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { Signal } from "../backend/strategies/base_strategy.ts";
 import { SignalCard } from "./components/SignalCard.tsx";
+import { Toaster, toast } from "sonner";
+import { QuickTrade } from "./components/QuickTrade.tsx";
+import { MarketDepth } from "./components/MarketDepth.tsx";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Activity, 
@@ -48,6 +51,7 @@ const App: React.FC = () => {
     dailyPnL: 0,
     drawdown: 0,
   });
+  const [currentPrices, setCurrentPrices] = useState<Record<string, number>>({});
   const [wsStatus, setWsStatus] = useState<"connected" | "disconnected" | "connecting">("connecting");
   const [ws, setWs] = useState<WebSocket | null>(null);
 
@@ -75,7 +79,12 @@ const App: React.FC = () => {
         if (data.stats) setStats(data.stats);
         if (data.history) setHistory(data.history);
       } else if (data.type === "NEW_SIGNAL") {
-        if (data.signal) setSignals((prev) => [data.signal, ...prev]);
+        if (data.signal) {
+          setSignals((prev) => [data.signal, ...prev]);
+          toast.info(`New ${data.signal.direction} signal for ${data.signal.instrument}`, {
+            description: `Strategy: ${data.signal.strategy} | Confidence: ${(data.signal.confidenceScore * 100).toFixed(0)}%`
+          });
+        }
       } else if (data.type === "ACCOUNT_UPDATE") {
         if (data.stats) {
           setStats(data.stats);
@@ -85,6 +94,7 @@ const App: React.FC = () => {
           }].slice(-100));
         }
       } else if (data.type === "PRICE_UPDATE") {
+        setCurrentPrices(prev => ({ ...prev, [data.symbol]: data.price }));
         setTrades((prev) => {
           return prev.map((t) => {
             if (t.status === "open" && t.instrument === data.symbol) {
@@ -116,6 +126,21 @@ const App: React.FC = () => {
           }
           return [data.trade, ...prev];
         });
+        if (data.trade.status === "Filled") {
+          toast.success(`Trade filled: ${data.trade.instrument} ${data.trade.direction}`);
+        }
+      } else if (data.type === "CLOSE_RESULT") {
+        if (data.success) {
+          toast.success(`Position ${data.orderId} closed successfully.`);
+        } else {
+          toast.error(`Failed to close position ${data.orderId}.`);
+        }
+      } else if (data.type === "ORDER_RESULT") {
+        if (data.success) {
+          toast.success(`Manual order placed successfully: ${data.orderId}`);
+        } else {
+          toast.error(`Order failed: ${data.error}`);
+        }
       }
     };
 
@@ -146,8 +171,30 @@ const App: React.FC = () => {
     }
   }, [ws]);
 
+  const handleClosePosition = useCallback((orderId: string) => {
+    if (ws && window.confirm(`Close position ${orderId}?`)) {
+      ws.send(JSON.stringify({ type: "CLOSE_POSITION", orderId }));
+    }
+  }, [ws]);
+
+  const handleManualOrder = useCallback((symbol: string, side: "long" | "short", quantity: number, entryPrice: number, stopLoss: number, takeProfit: number) => {
+    if (ws) {
+      ws.send(JSON.stringify({
+        type: "MANUAL_ORDER",
+        symbol,
+        side,
+        quantity,
+        entryPrice,
+        stopLoss,
+        takeProfit
+      }));
+      toast.info(`Placing manual ${side} order for ${symbol}...`);
+    }
+  }, [ws]);
+
   return (
     <div className="min-h-screen bg-black text-zinc-300 font-sans selection:bg-emerald-500/30">
+      <Toaster position="top-right" theme="dark" richColors />
       {/* Sidebar */}
       <div className="fixed left-0 top-0 bottom-0 w-20 bg-zinc-950 border-r border-zinc-800 flex flex-col items-center py-8 gap-8 z-50">
         <div className="w-12 h-12 bg-emerald-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-emerald-600/20">
@@ -262,6 +309,12 @@ const App: React.FC = () => {
                 </div>
               </div>
             </section>
+
+            {/* Quick Trade */}
+            <QuickTrade onTrade={handleManualOrder} currentPrices={currentPrices} />
+
+            {/* Market Depth */}
+            <MarketDepth symbol="NQ" currentPrice={currentPrices["NQ"] || 18000} />
           </div>
 
           {/* Right Column: Charts & Trades */}
@@ -360,7 +413,11 @@ const App: React.FC = () => {
                             {(trade.pnl || 0) >= 0 ? "+" : ""}${(trade.pnl || 0).toLocaleString()}
                           </td>
                           <td className="p-4">
-                            <button className="text-rose-500 hover:text-rose-400 transition-colors">
+                            <button 
+                              onClick={() => handleClosePosition(trade.order_id || trade.id)}
+                              className="text-rose-500 hover:text-rose-400 transition-colors p-1 hover:bg-rose-500/10 rounded"
+                              title="Close Position"
+                            >
                               <XCircle size={18} />
                             </button>
                           </td>

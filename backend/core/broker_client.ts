@@ -17,6 +17,7 @@ export interface AccountInfo {
 }
 
 export interface Position {
+  orderId: string;
   symbol: string;
   side: "long" | "short";
   quantity: number;
@@ -53,6 +54,7 @@ export interface BrokerClient {
     stopLoss: number,
     takeProfit: number
   ): Promise<{ success: boolean; orderId?: string; error?: string }>;
+  closePosition(orderId: string): Promise<boolean>;
   flattenAll(): Promise<boolean>;
   getAccountInfo(): Promise<AccountInfo>;
   getPositions(): Promise<Position[]>;

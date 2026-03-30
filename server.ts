@@ -114,6 +114,13 @@ async function startServer() {
         } else if (data.type === "FLATTEN_ALL") {
           const success = await broker.flattenAll();
           ws.send(JSON.stringify({ type: "FLATTEN_RESULT", success }));
+        } else if (data.type === "CLOSE_POSITION") {
+          const success = await broker.closePosition(data.orderId);
+          ws.send(JSON.stringify({ type: "CLOSE_RESULT", success, orderId: data.orderId }));
+        } else if (data.type === "MANUAL_ORDER") {
+          const { symbol, side, quantity, entryPrice, stopLoss, takeProfit } = data;
+          const result = await signalController.placeManualTrade(symbol, side, quantity, entryPrice, stopLoss, takeProfit);
+          ws.send(JSON.stringify({ type: "ORDER_RESULT", success: result.success, orderId: result.orderId, error: result.error }));
         }
       } catch (error) {
         console.error("Error processing WebSocket message:", error);

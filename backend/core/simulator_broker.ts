@@ -57,6 +57,7 @@ export class SimulatorBroker implements BrokerClient {
 
       // Add to positions
       this.positions.push({
+        orderId,
         symbol,
         side,
         quantity,
@@ -72,12 +73,21 @@ export class SimulatorBroker implements BrokerClient {
   }
 
   async flattenAll(): Promise<boolean> {
-    this.positions.forEach(p => {
-      this.balance += p.unrealizedPnL;
-      this.dailyPnL += p.unrealizedPnL;
+    const positionsToClose = [...this.positions];
+    positionsToClose.forEach(p => {
+      this.closePositionInternal(p, p.currentPrice);
     });
     this.positions = [];
     return true;
+  }
+
+  async closePosition(orderId: string): Promise<boolean> {
+    const p = this.positions.find(pos => pos.orderId === orderId);
+    if (p) {
+      this.closePositionInternal(p, p.currentPrice);
+      return true;
+    }
+    return false;
   }
 
   public updatePrices(symbol: string, price: number) {
@@ -96,18 +106,18 @@ export class SimulatorBroker implements BrokerClient {
         // Check SL/TP
         if (p.side === "long") {
           if (price <= p.stopLoss || price >= p.takeProfit) {
-            this.closePosition(p, price);
+            this.closePositionInternal(p, price);
           }
         } else {
           if (price >= p.stopLoss || price <= p.takeProfit) {
-            this.closePosition(p, price);
+            this.closePositionInternal(p, price);
           }
         }
       }
     });
   }
 
-  private closePosition(p: Position, price: number) {
+  private closePositionInternal(p: Position, price: number) {
     const points = p.side === "long" ? price - p.entryPrice : p.entryPrice - price;
     let multiplier = 20;
     if (p.symbol.includes("MNQ")) multiplier = 2;
